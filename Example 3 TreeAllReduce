@@ -1,0 +1,119 @@
+#include <mpi.h>
+#include <stdio.h>
+#include "reduce.h"
+#include "utils.h"
+#include <math.h>
+
+int raise_power(int x, int n) {    /*2,depth*/
+    int xn = 1;
+
+    for (int i=0; i<n; i++){ /*i up to depth*/
+        xn *= x;                /*2 then 2*2 then 2*4 etc etc*/
+    }
+
+    return xn;
+}
+
+/* This is the implementation that we came up with in the exercises for
+   MPI_SUM. */
+int ring_allreduce(const int *sendbuf, int *recvbuf, int count, MPI_Op op,
+                   MPI_Comm comm)
+{
+  int rank, size;
+  int i, c;
+  int ierr;
+  int source;
+  int dest;
+
+  if (op != MPI_SUM) {
+    fprintf(stderr, "Only coded for op == MPI_SUM\n");
+    return MPI_Abort(comm, 1);
+  }
+  ierr = MPI_Comm_rank(comm, &rank);CHKERR(ierr);
+  ierr = MPI_Comm_size(comm, &size);CHKERR(ierr);
+
+  source = (rank + size - 1) % size;
+  dest = (rank + 1) % size;
+  for (c = 0; c < count; c++) {
+    recvbuf[c] = sendbuf[c];
+  }
+  for (i = 0; i < size - 1; i++) {
+    ierr = MPI_Sendrecv_replace(recvbuf, count, MPI_INT, dest, 0, source, 0, comm, MPI_STATUS_IGNORE);CHKERR(ierr);
+    /* Only correct for op == MPI_SUM */
+    for (c = 0; c < count; c++) {
+      recvbuf[c] += sendbuf[c];
+    }
+  }
+  return 0;
+}
+
+int tree_allreduce(const int *sendbuf, int *recvbuf, int count, MPI_Op op,
+                   MPI_Comm comm)
+{
+    int rank, size;
+
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
+
+    int num_of_process = size;
+    int depth = 0;
+    int c,i;
+    int tmp_buf[count];
+   
+    for (c = 0; c < count; c++) {
+      recvbuf[c] = sendbuf[c];
+    }
+    
+    while(num_of_process > 1) {
+      /*idea: pairwise combine,move the message down tree*/
+      for (i=0; i < size - 1; i = i+2*raise_power(2,depth)){  /*2 then 2*2 then 2*4 etc etc*/
+              
+        if (rank == i) {
+          MPI_Recv(tmp_buf, count, MPI_INT, i + raise_power(2,depth), 2, comm, MPI_STATUS_IGNORE);
+          
+          if (op == MPI_SUM){
+            for(int s = 0;s<count;s++){
+              recvbuf[s] += tmp_buf[s];
+            }
+          }
+          else if (op == MPI_PROD){
+            for(int p = 0;p<count;p++){
+              recvbuf[p] *= tmp_buf[p];
+            }
+          }
+          else if (op == MPI_MAX ){
+            for(int m =0; m< count; m++){
+              if(tmp_buf[m]>recvbuf[m]){
+                recvbuf[m] = tmp_buf[m];
+              }
+            }
+          }
+          else if (op == MPI_MIN){
+            for(int n = 0; n<count; n++){
+              if(tmp_buf[n] < recvbuf[n]){
+                  recvbuf[n] = tmp_buf[n];
+                }
+            }
+          }
+        }
+
+        else if (rank == i + raise_power(2,depth)) {
+          MPI_Send(recvbuf, count, MPI_INT, i, 2, comm);
+        }
+      }
+      depth += 1;
+      num_of_process = num_of_process / 2 ;
+    }
+
+    MPI_Barrier(comm);
+
+    if (rank == 0) {
+      for (int i = 1; i < size; i++) {
+        MPI_Send(recvbuf, count, MPI_INT, i, 2, comm);
+      }
+    } else {
+      MPI_Recv(recvbuf, count, MPI_INT, 0, 2, comm, MPI_STATUS_IGNORE);
+    }
+
+    return 0;
+  }
