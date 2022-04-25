@@ -1,0 +1,42 @@
+#include <stdio.h>
+
+
+int checksquare(int num){
+    
+    //set number to chosen value
+    int square = 0;
+    
+    for (int i = 2; i<= num; i++){
+
+        //if this is equal to the imput number
+        //then it is a square number
+        if (i*i == num){
+            square = 1;
+            break;
+        }
+
+        //if this is greater than input number
+        //no need to check further so break the loop
+        if (i*i > num){
+            break;
+        }
+    }
+    if (square==1){
+        int z = num*2;
+        return printf("%d ", z);
+    
+    }else{
+        return printf("%d ", num);
+    }
+    return 0;
+}
+
+int main(){
+
+    int i;
+
+    for (i=2; i<21; ++i){
+    checksquare(i);
+    }
+    return 0;
+}
